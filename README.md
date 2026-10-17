@@ -98,10 +98,21 @@ git push -u origin feature/x
    [System.IO.File]::WriteAllText($path, $text, (New-Object System.Text.UTF8Encoding($false)))
    ```
 
-2. **DSH 沙箱在本机不可用**
-   `workspace-write` 模式下任何 `pwsh` 命令都以 `0xC0000142`（DLL 初始化失败）退出，
+2. **DSH 沙箱在本机不可用（已定性：与杀软无关）**
+   `workspace-write` 模式下任何 `pwsh` 命令都以 `0xC0000142`（`STATUS_DLL_INIT_FAILED`）退出，
    只能用 `danger-full-access` 执行，因此每条命令都会弹审批。
-   疑似沙箱注入的 DLL 被杀软/系统策略拦截，待反馈。
+
+   排查过程（逐层排除）：
+
+   | 假设 | 结论 | 依据 |
+   |---|---|---|
+   | 卡巴斯基拦截 | 排除 | 暂停卡巴保护后现象不变，仍 `0xC0000142` |
+   | 崩溃留痕 | 无 | 事件日志里没有任何 `pwsh.exe` 的 WER / Application Error 记录（进程在 DLL 初始化阶段就死掉，还没进入异常上报） |
+   | 受限令牌与 Win11 不兼容 | 排除 | 用系统 SAFER 受限令牌在 DSH 之外启动 `runas /trustlevel:0x20000 cmd.exe` 和 `powershell.exe` 均正常 |
+   | DSH 令牌构造 | 最可能 | 工作区 ACL 中存在合成身份 `S-1-4-40151289-676015424` 的授权项，说明它以「合成 SID + 受限令牌」启动子进程 |
+
+   结论：问题在 DSH 的沙箱实现侧，与本机的卡巴斯基 / 火绒（`usysdiag.exe`）无关，
+   应作为 DSH 的 bug 反馈。
 
 3. **https 克隆一律超时**
    即使 GitHub 页面能打开，终端里的 https 克隆也会卡死 —— 这是 SNI/IP 层面的阻断，不是凭证问题。
@@ -111,6 +122,7 @@ git push -u origin feature/x
 - [ ] 申请 PAT（勾 `repo`），补上建仓库 / 开 PR / 读 issue / 看 Actions 日志等能力
 - [ ] 给私钥加 passphrase + Windows ssh-agent，或对单个仓库改用 Deploy Key
 - [ ] 如需 GitHub CLI，换镜像重试安装
+- [ ] 把沙箱 `0xC0000142` 的排查结论反馈给 DSH
 
 ## 安全提示
 
